@@ -1,0 +1,58 @@
+FROM rhel7.2
+
+# Jenkins image for OpenShift
+#
+# This image provides a Jenkins server, primarily intended for integration with
+# OpenShift v3.
+#
+# Volumes: 
+# * /var/jenkins_home
+# Environment:
+# * $JENKINS_PASSWORD - Password for the Jenkins 'admin' user.
+
+MAINTAINER Ben Parees <bparees@redhat.com>
+
+ENV JENKINS_VERSION=1.609 \
+    HOME=/var/lib/jenkins \
+    JENKINS_HOME=/var/lib/jenkins \
+    STI_SCRIPTS_URL=image:///usr/libexec/s2i
+
+LABEL k8s.io.description="Jenkins is a continuous integration server" \
+      k8s.io.display-name="Jenkins 1.609" \
+      openshift.io.expose-services="8080:http" \
+      openshift.io.tags="jenkins,jenkins1,ci" \
+      io.openshift.s2i.scripts-url=image:///usr/libexec/s2i
+
+# Labels consumed by Red Hat build service
+LABEL BZComponent="openshift-jenkins-docker" \
+      Name="openshift3/jenkins-1-rhel7" \
+      Version="1.609" \
+      Architecture="x86_64" \
+      Release="7"
+
+# 8080 for main web interface, 50000 for slave agents
+EXPOSE 8080 50000
+
+RUN yum install -y gettext git tar zip unzip java-1.8.0-openjdk jenkins-1.609.1 jenkins-plugin-openshift-pipeline && \
+    yum install -y --disablerepo="epel" --setopt=tsflags=nodocs nss_wrapper && \
+    yum clean all  && \
+    localedef -f UTF-8 -i en_US en_US.UTF-8 && \
+    curl -L https://github.com/openshift/origin/releases/download/v1.0.8/openshift-origin-v1.0.8-6a2b026-linux-amd64.tar.gz | tar -zx && \
+    mv oc /usr/local/bin && \
+    rm oadm && \
+    rm openshift
+
+COPY ./contrib/openshift /opt/openshift
+COPY ./contrib/jenkins /usr/local/bin
+ADD ./contrib/s2i /usr/libexec/s2i
+
+RUN mkdir -p /opt/openshift/plugins && \
+    ln -s /usr/lib64/jenkins/openshift-pipeline.hpi /opt/openshift/plugins/openshift-pipeline.hpi && \
+    /usr/local/bin/fix-permissions /opt/openshift && \
+    chown -R 1001:0 /opt/openshift && \
+    /usr/local/bin/fix-permissions /var/lib/jenkins
+
+VOLUME ["/var/lib/jenkins"]
+
+USER 1001
+CMD ["/usr/libexec/s2i/run"]
